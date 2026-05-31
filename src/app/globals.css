@@ -1,0 +1,389 @@
+@import "tailwindcss";
+
+:root {
+  --daryo-bg: #020617;
+  --daryo-bg-soft: #071633;
+  --daryo-card: rgba(15, 23, 42, 0.72);
+  --daryo-card-strong: rgba(15, 23, 42, 0.9);
+  --daryo-border: rgba(148, 163, 184, 0.18);
+  --daryo-blue: #2563eb;
+  --daryo-cyan: #22d3ee;
+  --daryo-text: #ffffff;
+  --daryo-muted: #94a3b8;
+  --daryo-success: #10b981;
+  --daryo-warning: #facc15;
+  --daryo-danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--daryo-text);
+  background: #020617;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 46px 46px;
+  opacity: 0.18;
+  z-index: -4;
+  animation: daryoGridMove 22s linear infinite;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(37, 99, 235, 0.32), transparent 28%),
+    radial-gradient(circle at 84% 12%, rgba(34, 211, 238, 0.22), transparent 25%),
+    radial-gradient(circle at 50% 100%, rgba(30, 64, 175, 0.35), transparent 38%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.18), rgba(2, 6, 23, 0.96));
+  z-index: -5;
+}
+
+::selection {
+  background: rgba(34, 211, 238, 0.35);
+  color: white;
+}
+
+/* Живой логистический фон */
+.daryo-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(37, 99, 235, 0.32), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(34, 211, 238, 0.18), transparent 26%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.2), rgba(2, 6, 23, 0.96));
+}
+
+.daryo-page::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(34, 211, 238, 0.18) 0 2px, transparent 3px) 0 0 / 130px 130px,
+    radial-gradient(circle, rgba(96, 165, 250, 0.14) 0 2px, transparent 3px) 55px 45px / 160px 160px;
+  opacity: 0.55;
+  animation: daryoParticlesMove 34s linear infinite;
+  z-index: 0;
+}
+
+.daryo-page::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0%, transparent 42%, rgba(34, 211, 238, 0.16) 43%, transparent 45%, transparent 100%),
+    linear-gradient(145deg, transparent 0%, transparent 54%, rgba(37, 99, 235, 0.14) 55%, transparent 57%, transparent 100%),
+    linear-gradient(25deg, transparent 0%, transparent 64%, rgba(255, 255, 255, 0.08) 65%, transparent 66%, transparent 100%);
+  background-size: 260px 260px, 320px 320px, 420px 420px;
+  opacity: 0.42;
+  animation: daryoRoutesMove 18s linear infinite;
+  z-index: 0;
+}
+
+.daryo-container {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 28px 20px;
+}
+
+/* Декоративные живые световые круги */
+.daryo-container::before {
+  content: "";
+  position: fixed;
+  left: -120px;
+  top: 120px;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.22);
+  filter: blur(55px);
+  animation: daryoOrbOne 9s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.daryo-container::after {
+  content: "";
+  position: fixed;
+  right: -130px;
+  top: 40px;
+  width: 320px;
+  height: 320px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.18);
+  filter: blur(60px);
+  animation: daryoOrbTwo 11s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.daryo-card {
+  border: 1px solid var(--daryo-border);
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.82),
+    rgba(15, 23, 42, 0.62)
+  );
+  box-shadow:
+    0 24px 80px rgba(15, 23, 42, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(22px);
+  border-radius: 34px;
+}
+
+.daryo-card-soft {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.48);
+  border-radius: 24px;
+}
+
+.daryo-glass-blue {
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background: rgba(37, 99, 235, 0.12);
+  border-radius: 24px;
+}
+
+.daryo-input {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.72);
+  padding: 14px 16px;
+  color: white;
+  outline: none;
+  transition: 0.25s ease;
+}
+
+.daryo-input::placeholder {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.daryo-input:focus {
+  border-color: rgba(34, 211, 238, 0.65);
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.08);
+}
+
+.daryo-button {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #1d4ed8, #2563eb, #22d3ee);
+  padding: 15px 18px;
+  color: white;
+  font-weight: 900;
+  text-align: center;
+  box-shadow: 0 22px 55px rgba(37, 99, 235, 0.35);
+  transition: 0.25s ease;
+}
+
+.daryo-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.32),
+    transparent
+  );
+  animation: daryoButtonShine 3.2s ease-in-out infinite;
+}
+
+.daryo-button:hover {
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: 0 26px 70px rgba(34, 211, 238, 0.35);
+}
+
+.daryo-button:active {
+  transform: scale(0.97);
+}
+
+.daryo-button-secondary {
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.07);
+  padding: 15px 18px;
+  color: white;
+  font-weight: 800;
+  text-align: center;
+  transition: 0.25s ease;
+}
+
+.daryo-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.daryo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  background: rgba(34, 211, 238, 0.1);
+  padding: 7px 12px;
+  color: #cffafe;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daryo-status-success {
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  background: rgba(16, 185, 129, 0.1);
+  color: #bbf7d0;
+}
+
+.daryo-status-warning {
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  background: rgba(250, 204, 21, 0.1);
+  color: #fef08a;
+}
+
+.daryo-status-danger {
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecaca;
+}
+
+.daryo-title {
+  font-size: 46px;
+  line-height: 0.95;
+  font-weight: 950;
+  letter-spacing: -0.04em;
+}
+
+.daryo-gradient-text {
+  background: linear-gradient(135deg, #bfdbfe, #67e8f9, #ffffff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.daryo-muted {
+  color: var(--daryo-muted);
+}
+
+@keyframes daryoFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.daryo-fade-up {
+  animation: daryoFadeUp 0.55s ease both;
+}
+
+@keyframes daryoPulseGlow {
+  0%, 100% {
+    box-shadow: 0 22px 55px rgba(37, 99, 235, 0.35);
+  }
+  50% {
+    box-shadow: 0 26px 70px rgba(34, 211, 238, 0.42);
+  }
+}
+
+.daryo-pulse {
+  animation: daryoPulseGlow 3s ease-in-out infinite;
+}
+
+@keyframes daryoGridMove {
+  0% {
+    background-position: 0 0, 0 0;
+  }
+  100% {
+    background-position: 46px 46px, 46px 46px;
+  }
+}
+
+@keyframes daryoParticlesMove {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(40px, -30px, 0) rotate(5deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes daryoRoutesMove {
+  0% {
+    background-position: 0 0, 0 0, 0 0;
+  }
+  100% {
+    background-position: 260px 260px, -320px 320px, 420px -420px;
+  }
+}
+
+@keyframes daryoOrbOne {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translate(40px, 60px) scale(1.16);
+    opacity: 0.9;
+  }
+}
+
+@keyframes daryoOrbTwo {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(-50px, 90px) scale(1.12);
+    opacity: 0.85;
+  }
+}
+
+@keyframes daryoButtonShine {
+  0% {
+    transform: translateX(-120%);
+  }
+  45%, 100% {
+    transform: translateX(120%);
+  }
+}
+
+@media (max-width: 500px) {
+  .daryo-container {
+    max-width: 100%;
+    padding: 22px 16px;
+  }
+
+  .daryo-title {
+    font-size: 42px;
+  }
+}
