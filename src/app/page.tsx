@@ -11,12 +11,18 @@ type Client = {
   level: string;
   level_label?: string;
   total_items: number;
+  total_purchase_amount?: number;
+  confirmed_orders_count?: number;
+  average_check?: number;
 };
 
 type Order = {
   id: string;
   track_code: string;
   status: string;
+  amount?: number;
+  is_confirmed?: boolean;
+  confirmed_at?: string | null;
   created_at: string;
   updated_at?: string;
 };
@@ -37,6 +43,7 @@ type LevelInfo = {
   nextLevel: string;
   current: number;
   target: number;
+  remaining: number;
   progress: number;
 };
 
@@ -52,25 +59,31 @@ const levelSteps = [
   {
     key: "bronze",
     title: "Bronze",
-    required: 10,
+    required: 500,
     icon: "🥉",
   },
   {
     key: "silver",
     title: "Silver",
-    required: 30,
+    required: 2000,
     icon: "🥈",
   },
   {
     key: "gold",
     title: "Gold",
-    required: 50,
+    required: 3500,
     icon: "🥇",
+  },
+  {
+    key: "platinum",
+    title: "Platinum",
+    required: 5000,
+    icon: "🏆",
   },
   {
     key: "diamond",
     title: "Diamond",
-    required: 100,
+    required: 6500,
     icon: "💎",
   },
 ];
@@ -133,65 +146,91 @@ export default function Home() {
     });
   }
 
+  function formatMoney(value?: number) {
+    return `${Number(value || 0).toLocaleString("ru-RU")} сомони`;
+  }
+
   function getLevelLabel(level?: string) {
     if (level === "bronze") return "Bronze";
     if (level === "silver") return "Silver";
     if (level === "gold") return "Gold";
+    if (level === "platinum") return "Platinum";
     if (level === "diamond") return "Diamond";
     return "Start";
   }
 
-  function getNextLevelByTracks(totalTracks: number) {
-    if (totalTracks >= 100) {
+  function getLevelInfoByAmount(totalAmount: number) {
+    if (totalAmount >= 6500) {
       return {
-        current: "Diamond",
-        next: "Максимальный уровень",
-        target: 100,
+        currentLevel: "Diamond",
+        nextLevel: "Максимальный уровень",
+        current: totalAmount,
+        target: 6500,
         remaining: 0,
         progress: 100,
       };
     }
 
-    if (totalTracks >= 50) {
+    if (totalAmount >= 5000) {
       return {
-        current: "Gold",
-        next: "Diamond",
-        target: 100,
-        remaining: 100 - totalTracks,
-        progress: Math.min(Math.round((totalTracks / 100) * 100), 100),
+        currentLevel: "Platinum",
+        nextLevel: "Diamond",
+        current: totalAmount,
+        target: 6500,
+        remaining: 6500 - totalAmount,
+        progress: Math.min(Math.round((totalAmount / 6500) * 100), 100),
       };
     }
 
-    if (totalTracks >= 30) {
+    if (totalAmount >= 3500) {
       return {
-        current: "Silver",
-        next: "Gold",
-        target: 50,
-        remaining: 50 - totalTracks,
-        progress: Math.min(Math.round((totalTracks / 50) * 100), 100),
+        currentLevel: "Gold",
+        nextLevel: "Platinum",
+        current: totalAmount,
+        target: 5000,
+        remaining: 5000 - totalAmount,
+        progress: Math.min(Math.round((totalAmount / 5000) * 100), 100),
       };
     }
 
-    if (totalTracks >= 10) {
+    if (totalAmount >= 2000) {
       return {
-        current: "Bronze",
-        next: "Silver",
-        target: 30,
-        remaining: 30 - totalTracks,
-        progress: Math.min(Math.round((totalTracks / 30) * 100), 100),
+        currentLevel: "Silver",
+        nextLevel: "Gold",
+        current: totalAmount,
+        target: 3500,
+        remaining: 3500 - totalAmount,
+        progress: Math.min(Math.round((totalAmount / 3500) * 100), 100),
+      };
+    }
+
+    if (totalAmount >= 500) {
+      return {
+        currentLevel: "Bronze",
+        nextLevel: "Silver",
+        current: totalAmount,
+        target: 2000,
+        remaining: 2000 - totalAmount,
+        progress: Math.min(Math.round((totalAmount / 2000) * 100), 100),
       };
     }
 
     return {
-      current: "Start",
-      next: "Bronze",
-      target: 10,
-      remaining: 10 - totalTracks,
-      progress: Math.min(Math.round((totalTracks / 10) * 100), 100),
+      currentLevel: "Start",
+      nextLevel: "Bronze",
+      current: totalAmount,
+      target: 500,
+      remaining: 500 - totalAmount,
+      progress: Math.min(Math.round((totalAmount / 500) * 100), 100),
     };
   }
 
   function startEditTrack(order: Order) {
+    if (order.is_confirmed) {
+      setError("Подтверждённый трек нельзя изменить. Обратитесь к администратору.");
+      return;
+    }
+
     setEditingTrackId(order.id);
     setEditingTrackCode(order.track_code);
     setError("");
@@ -299,6 +338,7 @@ export default function Home() {
 
   function TrackCard({ order }: { order: Order }) {
     const isEditing = editingTrackId === order.id;
+    const isConfirmed = Boolean(order.is_confirmed);
 
     return (
       <div className="rounded-[28px] border border-white/10 bg-slate-950/45 p-4">
@@ -318,12 +358,25 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mb-4 rounded-2xl border border-blue-300/10 bg-blue-500/10 p-3">
-          <p className="text-xs text-blue-200">+1 очко к уровню</p>
-          <p className="mt-1 text-sm leading-6 text-slate-200">
-            Этот трек сохранён в вашем кабинете и засчитан в VIP-прогресс.
-          </p>
-        </div>
+        {isConfirmed ? (
+          <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+            <p className="text-xs text-emerald-200">Подтверждённая покупка</p>
+            <p className="mt-1 text-xl font-black text-white">
+              {formatMoney(order.amount)}
+            </p>
+            <p className="mt-1 text-xs text-emerald-100">
+              Эта сумма засчитана в ваш VIP-прогресс.
+            </p>
+          </div>
+        ) : (
+          <div className="mb-4 rounded-2xl border border-yellow-300/20 bg-yellow-500/10 p-3">
+            <p className="text-xs text-yellow-100">Ожидает проверки</p>
+            <p className="mt-1 text-sm leading-6 text-slate-200">
+              Администратор проверит сумму покупки и подтвердит этот трек.
+              После подтверждения сумма пополнит ваш уровень.
+            </p>
+          </div>
+        )}
 
         {isEditing ? (
           <div className="rounded-3xl border border-cyan-300/20 bg-cyan-500/10 p-3">
@@ -363,10 +416,10 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => startEditTrack(order)}
-              disabled={trackActionLoadingId === order.id}
-              className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-4 py-3 text-sm font-black text-cyan-100 transition active:scale-[0.98] disabled:opacity-60"
+              disabled={trackActionLoadingId === order.id || isConfirmed}
+              className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-4 py-3 text-sm font-black text-cyan-100 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Изменить
+              {isConfirmed ? "Подтверждён" : "Изменить"}
             </button>
 
             <button
@@ -383,8 +436,8 @@ export default function Home() {
   }
 
   function LevelProgressCard() {
-    const totalTracks = orders.length;
-    const levelData = getNextLevelByTracks(totalTracks);
+    const totalAmount = Number(client?.total_purchase_amount || 0);
+    const levelData = levelInfo || getLevelInfoByAmount(totalAmount);
 
     return (
       <div className="daryo-card-soft mb-5 p-5">
@@ -392,23 +445,27 @@ export default function Home() {
           <div>
             <p className="text-xs text-slate-500">Ваш уровень</p>
             <h3 className="mt-1 text-3xl font-black text-white">
-              {levelData.current}
+              {levelData.currentLevel}
             </h3>
             <p className="mt-2 text-sm leading-6 text-slate-400">
               {levelData.remaining === 0
                 ? "Вы достигли максимального уровня. Отличный результат."
-                : `Добавьте ещё ${levelData.remaining} треков до уровня ${levelData.next}.`}
+                : `До уровня ${levelData.nextLevel} осталось ${formatMoney(
+                    levelData.remaining
+                  )}.`}
             </p>
           </div>
 
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl border border-cyan-300/20 bg-cyan-500/10 text-3xl">
-            {levelData.current === "Diamond"
+            {levelData.currentLevel === "Diamond"
               ? "💎"
-              : levelData.current === "Gold"
+              : levelData.currentLevel === "Platinum"
+              ? "🏆"
+              : levelData.currentLevel === "Gold"
               ? "🥇"
-              : levelData.current === "Silver"
+              : levelData.currentLevel === "Silver"
               ? "🥈"
-              : levelData.current === "Bronze"
+              : levelData.currentLevel === "Bronze"
               ? "🥉"
               : "🚀"}
           </div>
@@ -416,11 +473,11 @@ export default function Home() {
 
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm font-black text-white">
-            Прогресс до {levelData.next}
+            Прогресс до {levelData.nextLevel}
           </p>
 
           <span className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-black text-blue-100">
-            {totalTracks}/{levelData.target}
+            {formatMoney(levelData.current)} / {formatMoney(levelData.target)}
           </span>
         </div>
 
@@ -440,7 +497,7 @@ export default function Home() {
 
         <div className="mt-5 grid gap-3">
           {levelSteps.map((level) => {
-            const isReached = totalTracks >= level.required;
+            const isReached = totalAmount >= level.required;
             const isCurrent =
               getLevelLabel(client?.level).toLowerCase() === level.key;
 
@@ -464,7 +521,7 @@ export default function Home() {
                         {level.title}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        от {level.required} треков
+                        от {formatMoney(level.required)}
                       </p>
                     </div>
                   </div>
@@ -574,7 +631,9 @@ export default function Home() {
         return;
       }
 
-      setTrackFormSuccess("Трек-код успешно добавлен");
+      setTrackFormSuccess(
+        "Трек добавлен и ожидает проверки администратора. После подтверждения суммы он засчитается в ваш VIP уровень."
+      );
       setTrackCode("");
 
       await loadCabinet(phone.trim());
@@ -672,6 +731,9 @@ export default function Home() {
     return `${base} border border-white/10 bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]`;
   }
 
+  const confirmedOrders = orders.filter((order) => order.is_confirmed);
+  const pendingOrders = orders.filter((order) => !order.is_confirmed);
+
   return (
     <main className="daryo-page text-white">
       <section className="daryo-container">
@@ -695,8 +757,8 @@ export default function Home() {
           </h1>
 
           <p className="daryo-muted mt-4 text-sm leading-6">
-            Личный кабинет для VIP клиентов: треки, заявки, VIP ID и система
-            уровней.
+            Личный кабинет для VIP клиентов: треки, подтверждённые покупки,
+            заявки, VIP ID и система уровней.
           </p>
         </div>
 
@@ -762,18 +824,18 @@ export default function Home() {
                 </div>
 
                 <div className="daryo-card-soft p-4">
-                  <p className="text-2xl">⭐</p>
-                  <p className="mt-3 text-sm font-black text-white">Уровни</p>
+                  <p className="text-2xl">💰</p>
+                  <p className="mt-3 text-sm font-black text-white">Суммы</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Каждый трек повышает VIP-прогресс клиента.
+                    Админ подтверждает сумму покупки по треку.
                   </p>
                 </div>
 
                 <div className="daryo-card-soft p-4">
-                  <p className="text-2xl">💬</p>
-                  <p className="mt-3 text-sm font-black text-white">Заявки</p>
+                  <p className="text-2xl">⭐</p>
+                  <p className="mt-3 text-sm font-black text-white">Уровни</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Клиент может отправить проблему и получить ответ.
+                    Уровень растёт от подтверждённой суммы покупок.
                   </p>
                 </div>
               </div>
@@ -784,40 +846,19 @@ export default function Home() {
                 </p>
 
                 <div className="mt-3 grid gap-2">
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <span className="text-xs text-slate-400">Start</span>
-                    <span className="text-xs font-black text-white">
-                      0 треков
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <span className="text-xs text-slate-400">Bronze</span>
-                    <span className="text-xs font-black text-white">
-                      10 треков
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <span className="text-xs text-slate-400">Silver</span>
-                    <span className="text-xs font-black text-white">
-                      30 треков
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <span className="text-xs text-slate-400">Gold</span>
-                    <span className="text-xs font-black text-white">
-                      50 треков
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2">
-                    <span className="text-xs text-slate-400">Diamond</span>
-                    <span className="text-xs font-black text-white">
-                      100 треков
-                    </span>
-                  </div>
+                  {levelSteps.map((level) => (
+                    <div
+                      key={level.key}
+                      className="flex items-center justify-between rounded-2xl bg-slate-950/35 px-3 py-2"
+                    >
+                      <span className="text-xs text-slate-400">
+                        {level.title}
+                      </span>
+                      <span className="text-xs font-black text-white">
+                        от {formatMoney(level.required)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </>
@@ -855,7 +896,7 @@ export default function Home() {
                   {client.vip_id}
                 </p>
 
-                <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-slate-950/35 p-3">
                     <p className="text-xs text-slate-500">Уровень</p>
                     <p className="mt-1 text-sm font-black text-cyan-100">
@@ -864,16 +905,23 @@ export default function Home() {
                   </div>
 
                   <div className="rounded-2xl bg-slate-950/35 p-3">
-                    <p className="text-xs text-slate-500">Треков</p>
+                    <p className="text-xs text-slate-500">Покупки</p>
                     <p className="mt-1 text-sm font-black text-white">
-                      {orders.length}
+                      {formatMoney(client.total_purchase_amount)}
                     </p>
                   </div>
 
                   <div className="rounded-2xl bg-slate-950/35 p-3">
-                    <p className="text-xs text-slate-500">Заявок</p>
+                    <p className="text-xs text-slate-500">Подтверждено</p>
                     <p className="mt-1 text-sm font-black text-white">
-                      {tickets.length}
+                      {client.confirmed_orders_count || 0} заказов
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-slate-950/35 p-3">
+                    <p className="text-xs text-slate-500">Средний чек</p>
+                    <p className="mt-1 text-sm font-black text-white">
+                      {formatMoney(client.average_check)}
                     </p>
                   </div>
                 </div>
@@ -905,7 +953,7 @@ export default function Home() {
                     <span className="block text-lg">📦</span>
                     <span className="mt-1 block">Мои треки</span>
                     <span className="mt-1 block text-[11px] opacity-70">
-                      список треков
+                      {orders.length} всего
                     </span>
                   </button>
 
@@ -916,7 +964,7 @@ export default function Home() {
                     <span className="block text-lg">➕</span>
                     <span className="mt-1 block">Добавить трек</span>
                     <span className="mt-1 block text-[11px] opacity-70">
-                      +1 очко
+                      на проверку
                     </span>
                   </button>
 
@@ -953,6 +1001,22 @@ export default function Home() {
                     </span>
                   </div>
 
+                  <div className="mb-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-3">
+                      <p className="text-xs text-emerald-100">Подтверждено</p>
+                      <p className="mt-1 text-xl font-black text-white">
+                        {confirmedOrders.length}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-yellow-300/20 bg-yellow-500/10 p-3">
+                      <p className="text-xs text-yellow-100">На проверке</p>
+                      <p className="mt-1 text-xl font-black text-white">
+                        {pendingOrders.length}
+                      </p>
+                    </div>
+                  </div>
+
                   {orders.length === 0 && (
                     <div className="rounded-2xl bg-white/[0.04] p-4 text-sm text-slate-400">
                       Треков пока нет. Добавьте первый трек-код.
@@ -971,8 +1035,9 @@ export default function Home() {
                 <div className="daryo-card-soft p-4">
                   <h3 className="text-xl font-black">Добавить трек-код</h3>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Вставьте трек-код из маркетплейса. Каждый трек даёт +1 очко
-                    к уровню.
+                    Вставьте трек-код из маркетплейса. Администратор проверит
+                    сумму покупки и подтвердит её. Только подтверждённая сумма
+                    засчитывается в VIP уровень.
                   </p>
 
                   <div className="mt-5">

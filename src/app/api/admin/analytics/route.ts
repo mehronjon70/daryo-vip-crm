@@ -17,12 +17,76 @@ function createSupabaseAdmin() {
   });
 }
 
+function calculateLevelByAmount(totalAmount: number) {
+  if (totalAmount >= 6500) return "diamond";
+  if (totalAmount >= 5000) return "platinum";
+  if (totalAmount >= 3500) return "gold";
+  if (totalAmount >= 2000) return "silver";
+  if (totalAmount >= 500) return "bronze";
+  return "start";
+}
+
 function getLevelLabel(level: string) {
   if (level === "bronze") return "Bronze";
   if (level === "silver") return "Silver";
   if (level === "gold") return "Gold";
+  if (level === "platinum") return "Platinum";
   if (level === "diamond") return "Diamond";
   return "Start";
+}
+
+async function refreshAllClientPurchaseStats(supabaseAdmin: any) {
+  const { data: clients, error: clientsError } = await supabaseAdmin
+    .from("clients")
+    .select("id");
+
+  if (clientsError) {
+    console.log("Analytics refresh clients error:", clientsError);
+    return;
+  }
+
+  for (const client of clients || []) {
+    const { data: confirmedOrders, error: ordersError } = await supabaseAdmin
+      .from("orders")
+      .select("amount")
+      .eq("client_id", client.id)
+      .eq("is_confirmed", true);
+
+    if (ordersError) {
+      console.log("Analytics refresh orders error:", ordersError);
+      continue;
+    }
+
+    const safeOrders = confirmedOrders || [];
+
+    const totalPurchaseAmount = safeOrders.reduce((sum: number, order: any) => {
+      return sum + Number(order.amount || 0);
+    }, 0);
+
+    const confirmedOrdersCount = safeOrders.length;
+
+    const averageCheck =
+      confirmedOrdersCount > 0
+        ? Math.round((totalPurchaseAmount / confirmedOrdersCount) * 100) / 100
+        : 0;
+
+    const level = calculateLevelByAmount(totalPurchaseAmount);
+
+    const { error: updateError } = await supabaseAdmin
+      .from("clients")
+      .update({
+        total_items: confirmedOrdersCount,
+        level,
+        total_purchase_amount: totalPurchaseAmount,
+        confirmed_orders_count: confirmedOrdersCount,
+        average_check: averageCheck,
+      })
+      .eq("id", client.id);
+
+    if (updateError) {
+      console.log("Analytics refresh update client error:", updateError);
+    }
+  }
 }
 
 export async function POST(request: Request) {
@@ -39,23 +103,25 @@ export async function POST(request: Request) {
 
     const supabaseAdmin = createSupabaseAdmin();
 
-    const { data: clients, error: clientsError } = await supabaseAdmin
+    await refreshAllClientPurchaseStats(supabaseAdmin);
+
+    const { data: allClientsRaw, error: allClientsError } = await supabaseAdmin
       .from("clients")
       .select(
-        "id, full_name, phone, status, vip_id, level, total_items, created_at, approved_at"
+        "id, full_name, phone, status, vip_id, level, total_items, total_purchase_amount, confirmed_orders_count, average_check, created_at, approved_at"
       )
       .order("created_at", { ascending: false });
 
-    if (clientsError) {
-      console.log("Analytics clients error:", clientsError);
+    if (allClientsError) {
+      console.log("Analytics clients error:", allClientsError);
 
       return NextResponse.json(
-        { error: "Не получилось загрузить клиентов" },
+        { error: "Ошибка загрузки клиентов" },
         { status: 500 }
       );
     }
 
-    const { data: orders, error: ordersError } = await supabaseAdmin
+    const { data: ordersRaw, error: ordersError } = await supabaseAdmin
       .from("orders")
       .select(
         `
@@ -63,6 +129,9 @@ export async function POST(request: Request) {
         client_id,
         track_code,
         status,
+        amount,
+        is_confirmed,
+        confirmed_at,
         created_at,
         updated_at,
         clients (
@@ -78,12 +147,12 @@ export async function POST(request: Request) {
       console.log("Analytics orders error:", ordersError);
 
       return NextResponse.json(
-        { error: "Не получилось загрузить треки" },
+        { error: "Ошибка загрузки треков" },
         { status: 500 }
       );
     }
 
-    const { data: tickets, error: ticketsError } = await supabaseAdmin
+    const { data: ticketsRaw, error: ticketsError } = await supabaseAdmin
       .from("tickets")
       .select(
         `
@@ -110,63 +179,89 @@ export async function POST(request: Request) {
       console.log("Analytics tickets error:", ticketsError);
 
       return NextResponse.json(
-        { error: "Не получилось загрузить заявки" },
+        { error: "Ошибка загрузки заявок" },
         { status: 500 }
       );
     }
 
-    const safeClients = clients || [];
-    const safeOrders = orders || [];
-    const safeTickets = tickets || [];
-
-    const pendingClients = safeClients.filter(
-      (client) => client.status === "pending"
-    );
-
-    const approvedClients = safeClients.filter(
-      (client) => client.status === "approved"
-    );
-
-    const blockedClients = safeClients.filter(
-      (client) => client.status === "blocked"
-    );
-
-    const topClients = [...safeClients]
-      .sort((a, b) => Number(b.total_items || 0) - Number(a.total_items || 0))
-      .slice(0, 5)
-      .map((client) => ({
-        ...client,
-        level_label: getLevelLabel(client.level),
-      }));
-
-    const allClients = safeClients.map((client) => ({
+    const allClients = (allClientsRaw || []).map((client: any) => ({
       ...client,
       level_label: getLevelLabel(client.level),
+      total_purchase_amount: Number(client.total_purchase_amount || 0),
+      confirmed_orders_count: Number(client.confirmed_orders_count || 0),
+      average_check: Number(client.average_check || 0),
     }));
 
-    const newTickets = safeTickets.filter((ticket) => ticket.status === "new");
+    const orders = (ordersRaw || []).map((order: any) => ({
+      ...order,
+      amount: Number(order.amount || 0),
+      is_confirmed: Boolean(order.is_confirmed),
+    }));
 
-    const inProgressTickets = safeTickets.filter(
-      (ticket) => ticket.status === "in_progress"
+    const tickets = ticketsRaw || [];
+
+    const pendingClients = allClients.filter(
+      (client: any) => client.status === "pending"
     );
 
-    const resolvedTickets = safeTickets.filter(
-      (ticket) => ticket.status === "resolved"
+    const approvedClients = allClients.filter(
+      (client: any) => client.status === "approved"
     );
 
-    const newAndInProgress = safeTickets.filter(
-      (ticket) => ticket.status === "new" || ticket.status === "in_progress"
+    const blockedClients = allClients.filter(
+      (client: any) => client.status === "blocked"
+    );
+
+    const topClients = [...allClients]
+      .filter((client: any) => client.status === "approved")
+      .sort((a: any, b: any) => {
+        return (
+          Number(b.total_purchase_amount || 0) -
+          Number(a.total_purchase_amount || 0)
+        );
+      })
+      .slice(0, 5);
+
+    const confirmedOrders = orders.filter((order: any) => order.is_confirmed);
+    const pendingOrders = orders.filter((order: any) => !order.is_confirmed);
+
+    const totalPurchaseAmount = confirmedOrders.reduce(
+      (sum: number, order: any) => sum + Number(order.amount || 0),
+      0
+    );
+
+    const averageOrderCheck =
+      confirmedOrders.length > 0
+        ? Math.round((totalPurchaseAmount / confirmedOrders.length) * 100) / 100
+        : 0;
+
+    const newTickets = tickets.filter((ticket: any) => ticket.status === "new");
+
+    const inProgressTickets = tickets.filter(
+      (ticket: any) => ticket.status === "in_progress"
+    );
+
+    const resolvedTickets = tickets.filter(
+      (ticket: any) => ticket.status === "resolved"
     );
 
     return NextResponse.json({
+      success: true,
       stats: {
-        totalClients: safeClients.length,
+        totalClients: allClients.length,
         pendingClients: pendingClients.length,
         approvedClients: approvedClients.length,
         blockedClients: blockedClients.length,
-        totalOrders: safeOrders.length,
-        problemOrders: 0,
-        totalTickets: safeTickets.length,
+
+        totalOrders: orders.length,
+        confirmedOrders: confirmedOrders.length,
+        pendingOrders: pendingOrders.length,
+
+        totalPurchaseAmount,
+        averageOrderCheck,
+
+        problemOrders: tickets.length,
+        totalTickets: tickets.length,
         newTickets: newTickets.length,
         inProgressTickets: inProgressTickets.length,
         resolvedTickets: resolvedTickets.length,
@@ -174,15 +269,15 @@ export async function POST(request: Request) {
       topClients,
       allClients,
       pendingClients,
-      orders: safeOrders,
+      orders,
       tickets: {
-        all: safeTickets,
-        newAndInProgress,
+        all: tickets,
+        newAndInProgress: [...newTickets, ...inProgressTickets],
         resolved: resolvedTickets,
       },
     });
   } catch (error) {
-    console.log("Admin analytics server error:", error);
+    console.log("Analytics server error:", error);
 
     return NextResponse.json(
       { error: "Ошибка сервера аналитики" },

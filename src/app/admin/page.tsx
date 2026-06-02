@@ -11,6 +11,9 @@ type Client = {
   level_label?: string;
   vip_id: string | null;
   total_items: number;
+  total_purchase_amount?: number;
+  confirmed_orders_count?: number;
+  average_check?: number;
   created_at: string;
   approved_at?: string | null;
 };
@@ -38,6 +41,9 @@ type Order = {
   client_id?: string;
   track_code: string;
   status: string;
+  amount?: number;
+  is_confirmed?: boolean;
+  confirmed_at?: string | null;
   created_at: string;
   updated_at?: string;
   clients?: {
@@ -59,7 +65,14 @@ type AnalyticsData = {
     pendingClients: number;
     approvedClients: number;
     blockedClients: number;
+
     totalOrders: number;
+    confirmedOrders: number;
+    pendingOrders: number;
+
+    totalPurchaseAmount: number;
+    averageOrderCheck: number;
+
     problemOrders: number;
     totalTickets: number;
     newTickets: number;
@@ -116,10 +129,13 @@ export default function AdminPage() {
     {}
   );
 
+  const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
+
   const [ticketLoadingId, setTicketLoadingId] = useState("");
   const [clientLoadingId, setClientLoadingId] = useState("");
   const [trackLoadingId, setTrackLoadingId] = useState("");
   const [deletingTicketId, setDeletingTicketId] = useState("");
+  const [confirmingAmountId, setConfirmingAmountId] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -146,7 +162,16 @@ export default function AdminPage() {
       replies[ticket.id] = ticket.admin_comment || "";
     }
 
+    const amounts: Record<string, string> = {};
+    for (const order of result.orders || []) {
+      amounts[order.id] = order.amount ? String(order.amount) : "";
+    }
+
     setTicketReplies(replies);
+    setAmountInputs((prev) => ({
+      ...prev,
+      ...amounts,
+    }));
   }
 
   async function loadAll(adminPassword: string) {
@@ -209,6 +234,56 @@ export default function AdminPage() {
       setError("Ошибка соединения при подтверждении клиента");
     } finally {
       setClientLoadingId("");
+    }
+  }
+
+  async function confirmOrderAmount(orderId: string, clientPhone?: string) {
+    const amount = Number(amountInputs[orderId] || 0);
+
+    if (!amount || amount <= 0) {
+      setError("Введите сумму покупки больше 0");
+      return;
+    }
+
+    setConfirmingAmountId(orderId);
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await fetch("/api/admin/orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          password: password.trim(),
+          action: "confirm_amount",
+          orderId,
+          amount,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Не получилось подтвердить сумму");
+        return;
+      }
+
+      setSuccess("Сумма покупки подтверждена");
+      await loadAnalytics(password.trim());
+
+      if (clientPhone || controlledClient?.client.phone) {
+        await findClientByPhone(
+          clientPhone || controlledClient?.client.phone,
+          false
+        );
+      }
+    } catch (error) {
+      console.log(error);
+      setError("Ошибка соединения при подтверждении суммы");
+    } finally {
+      setConfirmingAmountId("");
     }
   }
 
@@ -393,6 +468,16 @@ export default function AdminPage() {
         orders: result.orders || [],
         tickets: result.tickets || [],
       });
+
+      const amounts: Record<string, string> = {};
+      for (const order of result.orders || []) {
+        amounts[order.id] = order.amount ? String(order.amount) : "";
+      }
+
+      setAmountInputs((prev) => ({
+        ...prev,
+        ...amounts,
+      }));
 
       setControlPhone(finalPhone);
       setActiveTab("control");
@@ -598,6 +683,7 @@ export default function AdminPage() {
     if (level === "bronze") return "Bronze";
     if (level === "silver") return "Silver";
     if (level === "gold") return "Gold";
+    if (level === "platinum") return "Platinum";
     if (level === "diamond") return "Diamond";
     return "Start";
   }
@@ -610,6 +696,10 @@ export default function AdminPage() {
       month: "2-digit",
       year: "numeric",
     });
+  }
+
+  function formatMoney(value?: number) {
+    return `${Number(value || 0).toLocaleString("ru-RU")} сомони`;
   }
 
   function clientStatusClass(status: string) {
@@ -687,7 +777,8 @@ export default function AdminPage() {
             </h1>
 
             <p className="daryo-muted mt-2 text-sm leading-6">
-              Управление клиентами, треками, заявками, паролями и аккаунтами.
+              Управление клиентами, треками, суммами покупок, заявками и
+              аккаунтами.
             </p>
           </div>
         </div>
@@ -791,30 +882,30 @@ export default function AdminPage() {
                 </div>
 
                 <div className="daryo-glass-blue p-4">
-                  <p className="text-xs text-cyan-100">Всего треков</p>
-                  <p className="mt-1 text-3xl font-black text-white">
-                    {stats?.totalOrders || 0}
+                  <p className="text-xs text-cyan-100">Общая сумма</p>
+                  <p className="mt-1 text-2xl font-black text-white">
+                    {formatMoney(stats?.totalPurchaseAmount)}
                   </p>
                 </div>
 
                 <div className="daryo-card-soft p-4">
-                  <p className="text-xs text-blue-100">Новые заявки</p>
-                  <p className="mt-1 text-3xl font-black text-blue-100">
-                    {stats?.newTickets || 0}
+                  <p className="text-xs text-blue-100">Средний чек</p>
+                  <p className="mt-1 text-2xl font-black text-blue-100">
+                    {formatMoney(stats?.averageOrderCheck)}
                   </p>
                 </div>
 
                 <div className="daryo-status-success rounded-3xl p-4">
-                  <p className="text-xs">Подтверждённые</p>
+                  <p className="text-xs">Подтверждённые заказы</p>
                   <p className="mt-1 text-3xl font-black">
-                    {stats?.approvedClients || 0}
+                    {stats?.confirmedOrders || 0}
                   </p>
                 </div>
 
                 <div className="daryo-status-danger rounded-3xl p-4">
-                  <p className="text-xs">Выключены</p>
+                  <p className="text-xs">Ожидают проверки</p>
                   <p className="mt-1 text-3xl font-black">
-                    {stats?.blockedClients || 0}
+                    {stats?.pendingOrders || 0}
                   </p>
                 </div>
               </div>
@@ -855,7 +946,7 @@ export default function AdminPage() {
                   <span className="block text-lg">🏆</span>
                   <span className="mt-1 block">Топ 5</span>
                   <span className="mt-1 block text-[11px] opacity-70">
-                    уровень и треки
+                    по сумме
                   </span>
                 </button>
 
@@ -949,7 +1040,7 @@ export default function AdminPage() {
                 <span className="daryo-badge">🏆 Top clients</span>
                 <h2 className="mt-3 text-xl font-black">Топ 5 клиентов</h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  Клиенты, которые добавили больше всего треков.
+                  Клиенты с самой большой подтверждённой суммой покупок.
                 </p>
 
                 <div className="mt-4 grid gap-3">
@@ -981,14 +1072,19 @@ export default function AdminPage() {
 
                         <div className="text-right">
                           <p className="text-2xl font-black">
-                            {client.total_items || 0}
+                            {formatMoney(client.total_purchase_amount)}
                           </p>
-                          <p className="text-xs text-slate-400">треков</p>
+                          <p className="text-xs text-slate-400">
+                            {client.confirmed_orders_count || 0} заказов
+                          </p>
 
                           <div className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2">
                             <p className="text-xs font-black text-cyan-100">
                               {client.level_label ||
                                 translateLevel(client.level)}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              Ср. чек: {formatMoney(client.average_check)}
                             </p>
                           </div>
                         </div>
@@ -1124,7 +1220,7 @@ export default function AdminPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <div className="rounded-2xl bg-white/[0.04] p-3">
                           <p className="text-xs text-slate-500">Уровень</p>
                           <p className="mt-1 text-sm font-black text-cyan-100">
@@ -1133,16 +1229,25 @@ export default function AdminPage() {
                         </div>
 
                         <div className="rounded-2xl bg-white/[0.04] p-3">
-                          <p className="text-xs text-slate-500">Треков</p>
+                          <p className="text-xs text-slate-500">Покупки</p>
                           <p className="mt-1 text-sm font-black text-white">
-                            {client.total_items || 0}
+                            {formatMoney(client.total_purchase_amount)}
                           </p>
                         </div>
 
                         <div className="rounded-2xl bg-white/[0.04] p-3">
-                          <p className="text-xs text-slate-500">Дата</p>
+                          <p className="text-xs text-slate-500">
+                            Подтв. заказов
+                          </p>
                           <p className="mt-1 text-sm font-black text-white">
-                            {formatDate(client.created_at)}
+                            {client.confirmed_orders_count || 0}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-white/[0.04] p-3">
+                          <p className="text-xs text-slate-500">Средний чек</p>
+                          <p className="mt-1 text-sm font-black text-white">
+                            {formatMoney(client.average_check)}
                           </p>
                         </div>
                       </div>
@@ -1208,23 +1313,27 @@ export default function AdminPage() {
                       </div>
 
                       <div className="rounded-2xl bg-white/[0.04] p-3">
-                        <p className="text-xs text-slate-500">Треков</p>
+                        <p className="text-xs text-slate-500">Покупки</p>
                         <p className="font-black">
-                          {controlledClient.client.total_items}
+                          {formatMoney(
+                            controlledClient.client.total_purchase_amount
+                          )}
                         </p>
                       </div>
 
                       <div className="rounded-2xl bg-white/[0.04] p-3">
-                        <p className="text-xs text-slate-500">Заявок</p>
+                        <p className="text-xs text-slate-500">
+                          Подтв. заказов
+                        </p>
                         <p className="font-black">
-                          {controlledClient.tickets.length}
+                          {controlledClient.client.confirmed_orders_count || 0}
                         </p>
                       </div>
 
                       <div className="rounded-2xl bg-white/[0.04] p-3">
-                        <p className="text-xs text-slate-500">Статус</p>
+                        <p className="text-xs text-slate-500">Средний чек</p>
                         <p className="font-black">
-                          {translateClientStatus(controlledClient.client.status)}
+                          {formatMoney(controlledClient.client.average_check)}
                         </p>
                       </div>
                     </div>
@@ -1305,9 +1414,54 @@ export default function AdminPage() {
                                 </p>
                               </div>
 
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-500/10">
-                                📦
-                              </div>
+                              <span
+                                className={
+                                  order.is_confirmed
+                                    ? "daryo-status-success rounded-full px-3 py-1 text-xs font-bold"
+                                    : "daryo-status-warning rounded-full px-3 py-1 text-xs font-bold"
+                                }
+                              >
+                                {order.is_confirmed
+                                  ? "Подтверждён"
+                                  : "Ожидает"}
+                              </span>
+                            </div>
+
+                            <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                              <p className="mb-2 text-xs text-slate-500">
+                                Сумма покупки
+                              </p>
+
+                              <input
+                                value={amountInputs[order.id] || ""}
+                                onChange={(e) =>
+                                  setAmountInputs((prev) => ({
+                                    ...prev,
+                                    [order.id]: e.target.value,
+                                  }))
+                                }
+                                type="number"
+                                min="0"
+                                placeholder="Например: 320"
+                                className="daryo-input"
+                              />
+
+                              <button
+                                onClick={() =>
+                                  confirmOrderAmount(
+                                    order.id,
+                                    controlledClient.client.phone
+                                  )
+                                }
+                                disabled={confirmingAmountId === order.id}
+                                className="mt-3 w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-green-400 px-4 py-3 text-sm font-black text-white transition active:scale-[0.98] disabled:opacity-60"
+                              >
+                                {confirmingAmountId === order.id
+                                  ? "Подтверждение..."
+                                  : order.is_confirmed
+                                  ? "Обновить сумму"
+                                  : "Подтвердить сумму"}
+                              </button>
                             </div>
 
                             <button
@@ -1528,7 +1682,8 @@ export default function AdminPage() {
                   Все добавленные треки
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  Здесь можно смотреть и удалять треки клиентов.
+                  Здесь можно проверять треки, вводить сумму покупки и
+                  подтверждать её.
                 </p>
 
                 <div className="mt-4 grid gap-3">
@@ -1554,9 +1709,15 @@ export default function AdminPage() {
                           </p>
                         </div>
 
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-500/10 text-xl">
-                          📦
-                        </div>
+                        <span
+                          className={
+                            order.is_confirmed
+                              ? "daryo-status-success rounded-full px-3 py-1 text-xs font-bold"
+                              : "daryo-status-warning rounded-full px-3 py-1 text-xs font-bold"
+                          }
+                        >
+                          {order.is_confirmed ? "Подтверждён" : "Ожидает"}
+                        </span>
                       </div>
 
                       <div className="mb-3 grid grid-cols-2 gap-3">
@@ -1584,6 +1745,40 @@ export default function AdminPage() {
                             {order.clients?.vip_id || "нет"}
                           </p>
                         </div>
+                      </div>
+
+                      <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                        <p className="mb-2 text-xs text-slate-500">
+                          Сумма покупки
+                        </p>
+
+                        <input
+                          value={amountInputs[order.id] || ""}
+                          onChange={(e) =>
+                            setAmountInputs((prev) => ({
+                              ...prev,
+                              [order.id]: e.target.value,
+                            }))
+                          }
+                          type="number"
+                          min="0"
+                          placeholder="Например: 320"
+                          className="daryo-input"
+                        />
+
+                        <button
+                          onClick={() =>
+                            confirmOrderAmount(order.id, order.clients?.phone)
+                          }
+                          disabled={confirmingAmountId === order.id}
+                          className="mt-3 w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-green-400 px-4 py-3 text-sm font-black text-white transition active:scale-[0.98] disabled:opacity-60"
+                        >
+                          {confirmingAmountId === order.id
+                            ? "Подтверждение..."
+                            : order.is_confirmed
+                            ? "Обновить сумму"
+                            : "Подтвердить сумму"}
+                        </button>
                       </div>
 
                       <button

@@ -17,22 +17,6 @@ function createSupabaseAdmin() {
   });
 }
 
-function calculateLevel(totalTracks: number) {
-  if (totalTracks >= 100) return "diamond";
-  if (totalTracks >= 50) return "gold";
-  if (totalTracks >= 30) return "silver";
-  if (totalTracks >= 10) return "bronze";
-  return "start";
-}
-
-function getLevelLabel(level: string) {
-  if (level === "bronze") return "Bronze";
-  if (level === "silver") return "Silver";
-  if (level === "gold") return "Gold";
-  if (level === "diamond") return "Diamond";
-  return "Start";
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -135,9 +119,14 @@ export async function POST(request: Request) {
       .insert({
         client_id: client.id,
         track_code: trackCode,
-        status: "added",
+        status: "pending_review",
+        amount: 0,
+        is_confirmed: false,
+        confirmed_at: null,
       })
-      .select("id, client_id, track_code, status, created_at, updated_at")
+      .select(
+        "id, client_id, track_code, status, amount, is_confirmed, confirmed_at, created_at, updated_at"
+      )
       .single();
 
     if (trackError) {
@@ -149,53 +138,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { count: totalTracks, error: countError } = await supabaseAdmin
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("client_id", client.id);
-
-    if (countError) {
-      console.log("Count tracks error:", countError);
-
-      return NextResponse.json({
-        success: true,
-        message: "Трек добавлен, но уровень не обновился",
-        track,
-      });
-    }
-
-    const safeTotalTracks = totalTracks || 0;
-    const newLevel = calculateLevel(safeTotalTracks);
-
-    const { data: updatedClient, error: updateClientError } =
-      await supabaseAdmin
-        .from("clients")
-        .update({
-          total_items: safeTotalTracks,
-          level: newLevel,
-        })
-        .eq("id", client.id)
-        .select("id, full_name, phone, status, vip_id, level, total_items")
-        .single();
-
-    if (updateClientError) {
-      console.log("Update client level error:", updateClientError);
-
-      return NextResponse.json({
-        success: true,
-        message: "Трек добавлен, но уровень клиента не обновился",
-        track,
-      });
-    }
-
     return NextResponse.json({
       success: true,
-      message: "Трек-код успешно добавлен",
+      message:
+        "Трек добавлен и ожидает проверки администратора. После подтверждения суммы он засчитается в ваш VIP уровень.",
       track,
-      client: {
-        ...updatedClient,
-        level_label: getLevelLabel(updatedClient.level),
-      },
     });
   } catch (error) {
     console.log("Create track server error:", error);

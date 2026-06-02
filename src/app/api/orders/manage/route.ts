@@ -17,39 +17,80 @@ function createSupabaseAdmin() {
   });
 }
 
-function calculateLevel(totalTracks: number) {
-  if (totalTracks >= 100) return "diamond";
-  if (totalTracks >= 50) return "gold";
-  if (totalTracks >= 30) return "silver";
-  if (totalTracks >= 10) return "bronze";
+function calculateLevelByAmount(totalAmount: number) {
+  if (totalAmount >= 6500) return "diamond";
+  if (totalAmount >= 5000) return "platinum";
+  if (totalAmount >= 3500) return "gold";
+  if (totalAmount >= 2000) return "silver";
+  if (totalAmount >= 500) return "bronze";
   return "start";
 }
 
-async function refreshClientTotals(supabaseAdmin: any, clientId: string) {
-  const { count, error: countError } = await supabaseAdmin
-    .from("orders")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId);
+function getLevelLabel(level: string) {
+  if (level === "bronze") return "Bronze";
+  if (level === "silver") return "Silver";
+  if (level === "gold") return "Gold";
+  if (level === "platinum") return "Platinum";
+  if (level === "diamond") return "Diamond";
+  return "Start";
+}
 
-  if (countError) {
-    console.log("Refresh client count error:", countError);
-    return;
+async function refreshClientPurchaseStats(supabaseAdmin: any, clientId: string) {
+  const { data: confirmedOrders, error: ordersError } = await supabaseAdmin
+    .from("orders")
+    .select("amount")
+    .eq("client_id", clientId)
+    .eq("is_confirmed", true);
+
+  if (ordersError) {
+    console.log("Refresh purchase stats error:", ordersError);
+
+    return {
+      totalPurchaseAmount: 0,
+      confirmedOrdersCount: 0,
+      averageCheck: 0,
+      level: "start",
+      levelLabel: "Start",
+    };
   }
 
-  const totalTracks = count || 0;
-  const newLevel = calculateLevel(totalTracks);
+  const safeOrders = confirmedOrders || [];
+
+  const totalPurchaseAmount = safeOrders.reduce((sum: number, order: any) => {
+    return sum + Number(order.amount || 0);
+  }, 0);
+
+  const confirmedOrdersCount = safeOrders.length;
+
+  const averageCheck =
+    confirmedOrdersCount > 0
+      ? Math.round((totalPurchaseAmount / confirmedOrdersCount) * 100) / 100
+      : 0;
+
+  const newLevel = calculateLevelByAmount(totalPurchaseAmount);
 
   const { error: updateError } = await supabaseAdmin
     .from("clients")
     .update({
-      total_items: totalTracks,
+      total_items: confirmedOrdersCount,
       level: newLevel,
+      total_purchase_amount: totalPurchaseAmount,
+      confirmed_orders_count: confirmedOrdersCount,
+      average_check: averageCheck,
     })
     .eq("id", clientId);
 
   if (updateError) {
-    console.log("Refresh client level error:", updateError);
+    console.log("Refresh client purchase stats update error:", updateError);
   }
+
+  return {
+    totalPurchaseAmount,
+    confirmedOrdersCount,
+    averageCheck,
+    level: newLevel,
+    levelLabel: getLevelLabel(newLevel),
+  };
 }
 
 export async function POST(request: Request) {
@@ -85,7 +126,7 @@ export async function POST(request: Request) {
 
     const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
-      .select("id, phone, status")
+      .select("id, full_name, phone, status")
       .eq("phone", phone)
       .maybeSingle();
 
@@ -105,6 +146,20 @@ export async function POST(request: Request) {
       );
     }
 
+    if (client.status === "pending") {
+      return NextResponse.json(
+        { error: "Ваш аккаунт ещё не подтверждён" },
+        { status: 403 }
+      );
+    }
+
+    if (client.status === "blocked") {
+      return NextResponse.json(
+        { error: "Ваш аккаунт выключен. Обратитесь к администратору" },
+        { status: 403 }
+      );
+    }
+
     if (client.status !== "approved") {
       return NextResponse.json(
         { error: "Ваш аккаунт ещё не подтверждён" },
@@ -114,7 +169,7 @@ export async function POST(request: Request) {
 
     const { data: track, error: trackError } = await supabaseAdmin
       .from("orders")
-      .select("id, client_id, track_code, status")
+      .select("id, client_id, track_code, status, amount, is_confirmed")
       .eq("id", orderId)
       .eq("client_id", client.id)
       .maybeSingle();
@@ -153,21 +208,42 @@ export async function POST(request: Request) {
         );
       }
 
-      await refreshClientTotals(supabaseAdmin, client.id);
+      const clientStats = await refreshClientPurchaseStats(
+        supabaseAdmin,
+        client.id
+      );
 
       return NextResponse.json({
         success: true,
         message: "Трек удалён",
-        track,
+        deletedTrack: track,
+        clientStats,
       });
     }
 
     if (action === "update_track") {
+      if (track.is_confirmed) {
+        return NextResponse.json(
+          {
+            error:
+              "Подтверждённый трек нельзя изменить. Обратитесь к администратору.",
+          },
+          { status: 403 }
+        );
+      }
+
       const newTrackCode = String(body.trackCode || "").trim();
 
       if (!newTrackCode) {
         return NextResponse.json(
           { error: "Введите новый трек-код" },
+          { status: 400 }
+        );
+      }
+
+      if (newTrackCode.length < 3) {
+        return NextResponse.json(
+          { error: "Трек-код слишком короткий" },
           { status: 400 }
         );
       }
@@ -205,7 +281,9 @@ export async function POST(request: Request) {
         })
         .eq("id", orderId)
         .eq("client_id", client.id)
-        .select("id, client_id, track_code, status, created_at, updated_at")
+        .select(
+          "id, client_id, track_code, status, amount, is_confirmed, confirmed_at, created_at, updated_at"
+        )
         .single();
 
       if (updateError) {

@@ -30,22 +30,6 @@ function hashPassword(phone: string, password: string) {
     .digest("hex");
 }
 
-function getLevelLabel(level: string) {
-  if (level === "bronze") return "Bronze";
-  if (level === "silver") return "Silver";
-  if (level === "gold") return "Gold";
-  if (level === "diamond") return "Diamond";
-  return "Start";
-}
-
-function calculateLevel(totalTracks: number) {
-  if (totalTracks >= 100) return "diamond";
-  if (totalTracks >= 50) return "gold";
-  if (totalTracks >= 30) return "silver";
-  if (totalTracks >= 10) return "bronze";
-  return "start";
-}
-
 function normalizePhone(phone: string) {
   return phone
     .replace(/\s+/g, "")
@@ -54,40 +38,92 @@ function normalizePhone(phone: string) {
     .replace(/\)/g, "");
 }
 
-async function refreshClientTotals(supabaseAdmin: any, clientId: string) {
-  const { count, error: countError } = await supabaseAdmin
-    .from("orders")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId);
+function calculateLevelByAmount(totalAmount: number) {
+  if (totalAmount >= 6500) return "diamond";
+  if (totalAmount >= 5000) return "platinum";
+  if (totalAmount >= 3500) return "gold";
+  if (totalAmount >= 2000) return "silver";
+  if (totalAmount >= 500) return "bronze";
+  return "start";
+}
 
-  if (countError) {
-    console.log("Client control refresh count error:", countError);
-    return;
+function getLevelLabel(level: string) {
+  if (level === "bronze") return "Bronze";
+  if (level === "silver") return "Silver";
+  if (level === "gold") return "Gold";
+  if (level === "platinum") return "Platinum";
+  if (level === "diamond") return "Diamond";
+  return "Start";
+}
+
+async function refreshClientPurchaseStats(supabaseAdmin: any, clientId: string) {
+  const { data: confirmedOrders, error: ordersError } = await supabaseAdmin
+    .from("orders")
+    .select("amount")
+    .eq("client_id", clientId)
+    .eq("is_confirmed", true);
+
+  if (ordersError) {
+    console.log("Client control refresh purchase stats error:", ordersError);
+
+    return {
+      totalPurchaseAmount: 0,
+      confirmedOrdersCount: 0,
+      averageCheck: 0,
+      level: "start",
+      levelLabel: "Start",
+    };
   }
 
-  const totalTracks = count || 0;
-  const newLevel = calculateLevel(totalTracks);
+  const safeOrders = confirmedOrders || [];
+
+  const totalPurchaseAmount = safeOrders.reduce((sum: number, order: any) => {
+    return sum + Number(order.amount || 0);
+  }, 0);
+
+  const confirmedOrdersCount = safeOrders.length;
+
+  const averageCheck =
+    confirmedOrdersCount > 0
+      ? Math.round((totalPurchaseAmount / confirmedOrdersCount) * 100) / 100
+      : 0;
+
+  const level = calculateLevelByAmount(totalPurchaseAmount);
 
   const { error: updateError } = await supabaseAdmin
     .from("clients")
     .update({
-      total_items: totalTracks,
-      level: newLevel,
+      total_items: confirmedOrdersCount,
+      level,
+      total_purchase_amount: totalPurchaseAmount,
+      confirmed_orders_count: confirmedOrdersCount,
+      average_check: averageCheck,
     })
     .eq("id", clientId);
 
   if (updateError) {
-    console.log("Client control refresh level error:", updateError);
+    console.log("Client control update purchase stats error:", updateError);
   }
+
+  return {
+    totalPurchaseAmount,
+    confirmedOrdersCount,
+    averageCheck,
+    level,
+    levelLabel: getLevelLabel(level),
+  };
 }
 
 async function getClientFullData(supabaseAdmin: any, clientId: string) {
-  await refreshClientTotals(supabaseAdmin, clientId);
+  const purchaseStats = await refreshClientPurchaseStats(
+    supabaseAdmin,
+    clientId
+  );
 
   const { data: client, error: clientError } = await supabaseAdmin
     .from("clients")
     .select(
-      "id, full_name, phone, status, vip_id, level, total_items, created_at, approved_at"
+      "id, full_name, phone, status, vip_id, level, total_items, total_purchase_amount, confirmed_orders_count, average_check, created_at, approved_at"
     )
     .eq("id", clientId)
     .maybeSingle();
@@ -102,7 +138,9 @@ async function getClientFullData(supabaseAdmin: any, clientId: string) {
 
   const { data: orders, error: ordersError } = await supabaseAdmin
     .from("orders")
-    .select("id, client_id, track_code, status, created_at, updated_at")
+    .select(
+      "id, client_id, track_code, status, amount, is_confirmed, confirmed_at, created_at, updated_at"
+    )
     .eq("client_id", clientId)
     .order("created_at", { ascending: false });
 
@@ -125,9 +163,18 @@ async function getClientFullData(supabaseAdmin: any, clientId: string) {
   return {
     client: {
       ...client,
-      level_label: getLevelLabel(client.level),
+      level: purchaseStats.level,
+      level_label: purchaseStats.levelLabel,
+      total_items: purchaseStats.confirmedOrdersCount,
+      total_purchase_amount: purchaseStats.totalPurchaseAmount,
+      confirmed_orders_count: purchaseStats.confirmedOrdersCount,
+      average_check: purchaseStats.averageCheck,
     },
-    orders: orders || [],
+    orders: (orders || []).map((order: any) => ({
+      ...order,
+      amount: Number(order.amount || 0),
+      is_confirmed: Boolean(order.is_confirmed),
+    })),
     tickets: tickets || [],
   };
 }
@@ -284,7 +331,7 @@ export async function POST(request: Request) {
         })
         .eq("id", clientId)
         .select(
-          "id, full_name, phone, status, vip_id, level, total_items, created_at, approved_at"
+          "id, full_name, phone, status, vip_id, level, total_items, total_purchase_amount, confirmed_orders_count, average_check, created_at, approved_at"
         )
         .single();
 
@@ -346,7 +393,7 @@ export async function POST(request: Request) {
         })
         .eq("id", clientId)
         .select(
-          "id, full_name, phone, status, vip_id, level, total_items, created_at, approved_at"
+          "id, full_name, phone, status, vip_id, level, total_items, total_purchase_amount, confirmed_orders_count, average_check, created_at, approved_at"
         )
         .single();
 
@@ -433,7 +480,12 @@ export async function POST(request: Request) {
     console.log("Client control server error:", error);
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Ошибка сервера управления клиентом" },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Ошибка сервера управления клиентом",
+      },
       { status: 500 }
     );
   }
